@@ -1,9 +1,17 @@
 #!/usr/bin/env python3
 
 import scipy.interpolate as interpolate
+from moviepy.video.io.bindings import PIL_to_npimage
+import matplotlib.pyplot as plt
 import moviepy.editor as edit
 import numpy as np
 import argparse
+import PIL
+from PIL import ImageFont, ImageDraw
+import pdb
+
+MAX_SPEED = 120.0
+FONT = ImageFont.FreeTypeFont("../fonts/PEPSI_pl.ttf", 80)
 
 class SensorData:
     speed = None
@@ -12,10 +20,25 @@ class SensorData:
 
 SENSOR_DATA = SensorData()
 
+
 def add_telemetry_data(get_frame, t):
     frame = get_frame(t)
-    frame[0:int(SENSOR_DATA.speed(t)), :, :] = (0, 255, 0)
+    add_speed_text(frame, SENSOR_DATA.speed(t), frame.shape)
+    plt.figure(1)
+    plt.imshow(frame)
+    plt.show()
     return frame
+
+
+def add_speed_text(frame, speed, image_shape):
+    im = PIL.Image.new('RGB', (200, 200))
+    draw = ImageDraw.Draw(im)
+    red_channel = min(int((speed / MAX_SPEED) * 255), 255)
+    draw.text((2, 0), "{}\nkm/h".format(int(speed)),
+              (0, 255 - red_channel, red_channel),
+              font=FONT)
+
+    frame[1000:1200:, 1000:1200, :] += PIL_to_npimage(im)
 
 
 def init_sensor_data(data_file_name):
@@ -39,6 +62,8 @@ def main():
     args = parser.parse_args()
 
     init_sensor_data(args.data)
+
+    
 
     videoclip = edit.VideoFileClip(args.media)
     videoclip = videoclip.fl(add_telemetry_data)
