@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import scipy.interpolate as interpolate
+import sys
 from moviepy.video.io.bindings import PIL_to_npimage
 import matplotlib.pyplot as plt
 import moviepy.editor as edit
@@ -10,8 +11,11 @@ import PIL
 from PIL import ImageFont, ImageDraw
 import pdb
 
+FONT_SIZE = 200
+
 MAX_SPEED = 120.0
-FONT = ImageFont.FreeTypeFont("../fonts/PEPSI_pl.ttf", 80)
+global FONT
+FONT = None
 
 class SensorData:
     speed = None
@@ -23,22 +27,43 @@ SENSOR_DATA = SensorData()
 
 def add_telemetry_data(get_frame, t):
     frame = get_frame(t)
-    add_speed_text(frame, SENSOR_DATA.speed(t), frame.shape)
+    height, _, _, = frame.shape
+    global FONT
+    if FONT is None:
+        FONT = ImageFont.FreeTypeFont("../fonts/PEPSI_pl.ttf", int(FONT_SIZE*(height/1440)))
+
+    add_speed_text(frame, SENSOR_DATA.speed(t))
     plt.figure(1)
     plt.imshow(frame)
     plt.show()
+    sys.exit(0)
     return frame
 
 
-def add_speed_text(frame, speed, image_shape):
-    im = PIL.Image.new('RGB', (200, 200))
+def add_speed_text(frame, speed):
+    im = PIL.Image.new('RGB', (int(FONT_SIZE*2.7), int(FONT_SIZE*1.5)))
     draw = ImageDraw.Draw(im)
     red_channel = min(int((speed / MAX_SPEED) * 255), 255)
     draw.text((2, 0), "{}\nkm/h".format(int(speed)),
-              (0, 255 - red_channel, red_channel),
+              (red_channel, 255 - red_channel, 0),
               font=FONT)
 
-    frame[1000:1200:, 1000:1200, :] += PIL_to_npimage(im)
+    height, width, _ = frame.shape
+
+    overlay_image(frame, im, int(height*(31/40)), int(width*(16/20)))
+
+
+def overlay_image(frame, image, y, x):
+    np_image = PIL_to_npimage(image)
+    height, width, _ = np_image.shape
+    mask = np.sum(np_image, axis=-1)
+    new_shit = np.empty(np_image.shape)
+    new_shit[:, :, 0] = mask
+    new_shit[:, :, 1] = mask
+    new_shit[:, :, 2] = mask
+    new_shit /= np.max(new_shit)
+    patch = frame[y:y+height, x:x+width, :]
+    patch[:, :, :] = (1 - new_shit)*patch + new_shit*np_image
 
 
 def init_sensor_data(data_file_name):
