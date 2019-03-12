@@ -9,8 +9,8 @@ def main():
             f.write("{},{},{},{}\n".format(
                 i/100,
                 int((math.sin(i/100) + 1)*100/2),
-                math.sin(i/1000),
-                math.cos(i/1000),
+                math.sin(i/100),
+                math.cos(i/100),
             ))
 
 
