@@ -13,18 +13,25 @@ import pdb
 
 
 FONT_SIZE = 200
+SMALL_FONT_SIZE = 40
 
 MAX_SPEED = 120.0
 global FONT
 FONT = None
+global SMALL_FONT
+SMALL_FONT = None
+global TEXT_FRAME
+TEXT_FRAME = None
 
 THROTTLE_BLOCK_HEIGHT = 1/20
 THROTTLE_BLOCK_GAP = 1/60
+
 
 class SensorData:
     speed = None
     throttle = None
     steering = None
+
 
 SENSOR_DATA = SensorData()
 
@@ -33,17 +40,34 @@ def add_telemetry_data(get_frame, t):
     frame = get_frame(t)
     height, _, _, = frame.shape
     global FONT
+    global SMALL_FONT
+    global TEXT_FRAME
     if FONT is None:
         FONT = ImageFont.FreeTypeFont("../fonts/PEPSI_pl.ttf", int(FONT_SIZE*(height/1440)))
+        SMALL_FONT = ImageFont.FreeTypeFont("../fonts/PEPSI_pl.ttf", int(SMALL_FONT_SIZE*(height/1440)))
+        TEXT_FRAME = get_static_text(frame.shape)
 
     add_speed_text(frame, SENSOR_DATA.speed(t))
-    add_throttle_bar(frame, SENSOR_DATA.throttle(t))
-    #add_throttle_bar(frame, -0.3)
-    #plt.figure(1)
-    #plt.imshow(frame)
-    #plt.show()
-    #sys.exit(0)
+    #add_throttle_bar(frame, SENSOR_DATA.throttle(t))
+    add_throttle_bar(frame, 1.0)
+
+    overlay_image(frame, TEXT_FRAME, 0, 0)
+    plt.figure(1)
+    plt.imshow(frame)
+    plt.show()
+    sys.exit(0)
     return frame
+
+
+def get_static_text(shape):
+    height, width, _ = shape
+    im = PIL.Image.new('RGB', (width, height))
+    draw = ImageDraw.Draw(im)
+
+    draw.text((width*35/1000, height*4/100), "throttle", (255, 0, 0), font=SMALL_FONT)
+    draw.text((width*35/1000, height*94/100), "brake", (255, 0, 0), font=SMALL_FONT)
+
+    return PIL_to_npimage(im)
 
 
 def add_speed_text(frame, speed):
@@ -120,7 +144,7 @@ def get_throttle_bar_mask(throttle, shape, bar_center, bar_height):
 
     width = shape[1]
 
-    mask[block_gap:shape[0]-block_gap, 0:int(width/8), :] = 1
+    mask[block_gap*2:shape[0]-block_gap*2, 0:int(width/8), :] = 1
 
     return mask
 
@@ -162,8 +186,6 @@ def main():
     args = parser.parse_args()
 
     init_sensor_data(args.data)
-
-    
 
     videoclip = edit.VideoFileClip(args.media)
     videoclip = videoclip.fl(add_telemetry_data)
