@@ -53,15 +53,17 @@ def add_telemetry_data(get_frame, t):
         SMALL_FONT = ImageFont.FreeTypeFont("../fonts/PEPSI_pl.ttf", int(SMALL_FONT_SIZE*(height/1440)))
         TEXT_FRAME = get_static_text(frame.shape)
 
-    add_speed_text(frame, SENSOR_DATA.speed(t + offset))
-    add_throttle_bar(frame, SENSOR_DATA.throttle(t + offset))
+    add_speed_text(frame, SENSOR_DATA.speed(t))
+    add_throttle_bar(frame, SENSOR_DATA.throttle(t))
+    #add_steering_bar(frame, SENSOR_DATA.steering(t))
+    add_steering_bar(frame, -0.7)
     #add_throttle_bar(frame, 1.0)
 
     overlay_image(frame, TEXT_FRAME, 0, 0)
-    #plt.figure(1)
-    #plt.imshow(frame)
-    #plt.show()
-    #sys.exit(0)
+    plt.figure(1)
+    plt.imshow(frame)
+    plt.show()
+    sys.exit(0)
     return frame
 
 
@@ -133,6 +135,69 @@ def add_throttle_bar(frame, throttle):
     overlay_image(frame, bar, bar_y_position, bar_x_position)
 
 
+def add_steering_bar(frame, steering):
+    frame_height, frame_width, _ = frame.shape
+
+    bar_width = int(frame_width*9/10)
+    bar_height = int(frame_height/20)
+
+    bar_x_position = int(frame_width*1/20)
+    bar_y_position = int(frame_height*221/240)
+
+    bar = np.zeros((bar_height, bar_width, 3), dtype='uint8')
+
+    bar_center = bar_width//2
+    bar[:, :, 0] = 255
+    mask = get_steering_bar_mask(steering, bar.shape, bar_center)
+    bar *= mask
+    plt.figure(2)
+    plt.subplot(2, 1, 1)
+    plt.imshow(mask*255)
+    plt.subplot(2, 1, 2)
+    plt.imshow(bar)
+    plt.show()
+
+    #shape_im = PIL.Image.new('RGB', (bar_width, bar_height))
+    #draw = ImageDraw.Draw(shape_im)
+
+    #top_gradient = np.tile(np.linspace(1, 0, bar_center), (bar_width, 1)).T
+    #bottom_gradient = np.tile(np.linspace(0, 1, bar_height - bar_center), (bar_width, 1)).T
+
+    #draw.polygon([
+    #    (0, 0),
+    #    (bar_width, 0),
+    #    (bar_width/2, bar_center),
+    #    (bar_width, bar_height),
+    #    (0, bar_height)
+    #], fill=(1, 1, 1))
+    #mask = PIL_to_npimage(shape_im)
+
+
+    #bar[0:bar_center, :, 0] = top_gradient*255
+    #bar[0:bar_center, :, 1] = (1 - top_gradient)*255
+    #bar[0:bar_center, :, 2] = 0
+
+    #bar[bar_center:bar_height, :, 0] = bottom_gradient*255
+    #bar[bar_center:bar_height, :, 1] = (1 - bottom_gradient)*255
+    #bar[bar_center:bar_height, :, 2] = 0
+
+    #throttle_bar_mask = get_throttle_bar_mask(steering, bar.shape, bar_center, bar_height)
+
+    #bar *= mask
+    #bar *= throttle_bar_mask
+
+    overlay_image(frame, bar, bar_y_position, bar_x_position)
+
+
+def get_steering_bar_mask(steering, shape, bar_center):
+    mask = np.zeros(shape, dtype='uint8')
+    if steering > 0:
+        mask[:, bar_center:bar_center + int(bar_center*steering), :] = 1
+    else:
+        mask[:, bar_center - int(bar_center*-steering):bar_center, :] = 1
+    return mask
+
+
 def get_throttle_bar_mask(throttle, shape, bar_center, bar_height):
     mask = np.zeros(shape, dtype='uint8')
     block_height = int(THROTTLE_BLOCK_HEIGHT*bar_center)
@@ -193,7 +258,7 @@ def init_sensor_data(data_path, video_date, ten_count_distance):
     csv_files = []
     for root, _, files in os.walk(data_path):
         csv_files.extend([(root, f) for f in files if f.endswith('.csv')])
-    
+
     data = []
     first_date = None
     for root, csv_file in sorted(csv_files):
@@ -217,11 +282,14 @@ def init_sensor_data(data_path, video_date, ten_count_distance):
                 data.append((time, steering, throttle, speed))
 
     data_array = np.array(data)
-    SENSOR_DATA.speed = interpolate.interp1d(data_array[:, 0], data_array[:, 3])
-    SENSOR_DATA.throttle = interpolate.interp1d(data_array[:, 0], data_array[:, 2])
-    SENSOR_DATA.steering = interpolate.interp1d(data_array[:, 0], data_array[:, 1])
+    SENSOR_DATA.speed = interpolate.interp1d(data_array[:, 0], data_array[:, 3],
+                                             fill_value=0, bounds_error=False)
+    SENSOR_DATA.throttle = interpolate.interp1d(data_array[:, 0], data_array[:, 2],
+                                                fill_value=0, bounds_error=False)
+    SENSOR_DATA.steering = interpolate.interp1d(data_array[:, 0], data_array[:, 1],
+                                                fill_value=0, bounds_error=False)
     SENSOR_DATA.time_offset = video_date - first_date
-    pdb.set_trace()
+    #pdb.set_trace()
 
 
 def get_mp4_creation_date(mediafile):
