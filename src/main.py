@@ -27,8 +27,20 @@ SMALL_FONT = None
 global TEXT_FRAME
 TEXT_FRAME = None
 
+global THROTTLE_BAR
+THROTTLE_BAR = None
+global STEERING_BAR
+STEERING_BAR = None
+
 THROTTLE_BLOCK_HEIGHT = 1/20
 THROTTLE_BLOCK_GAP = 1/60
+
+THROTTLE_BAR_HEIGHT = 9/10
+THROTTLE_BAR_WIDTH = 1/20
+THROTTLE_BAR_CENTER = 2/3
+
+STEERING_BAR_WIDTH = 4/20
+STEERING_BAR_HEIGHT = 1/20
 
 
 class SensorData:
@@ -42,21 +54,25 @@ SENSOR_DATA = SensorData()
 
 
 def add_telemetry_data(get_frame, t):
-    offset = SENSOR_DATA.time_offset.seconds
+    offset = SENSOR_DATA.time_offset
     frame = get_frame(t)
     height, _, _, = frame.shape
     global FONT
     global SMALL_FONT
     global TEXT_FRAME
+    global THROTTLE_BAR
+    global STEERING_BAR
     if FONT is None:
         FONT = ImageFont.FreeTypeFont("../fonts/PEPSI_pl.ttf", int(FONT_SIZE*(height/1440)))
         SMALL_FONT = ImageFont.FreeTypeFont("../fonts/PEPSI_pl.ttf", int(SMALL_FONT_SIZE*(height/1440)))
         TEXT_FRAME = get_static_text(frame.shape)
+        THROTTLE_BAR = prepare_throttle_bar(frame)
+        STEERING_BAR = prepare_steering_bar(frame)
 
-    add_speed_text(frame, SENSOR_DATA.speed(t))
-    add_throttle_bar(frame, SENSOR_DATA.throttle(t))
-    #add_steering_bar(frame, SENSOR_DATA.steering(t))
-    add_steering_bar(frame, -0.7)
+    add_speed_text(frame, SENSOR_DATA.speed(t + offset))
+    add_throttle_bar(frame, SENSOR_DATA.throttle(t + offset), np.copy(THROTTLE_BAR))
+    #add_steering_bar(frame, SENSOR_DATA.steering(t + offset), np.copy(STEERING_BAR))
+    add_steering_bar(frame, -1.0, np.copy(STEERING_BAR))
     #add_throttle_bar(frame, 1.0)
 
     overlay_image(frame, TEXT_FRAME, 0, 0)
@@ -79,28 +95,25 @@ def get_static_text(shape):
 
 
 def add_speed_text(frame, speed):
-    im = PIL.Image.new('RGB', (int(FONT_SIZE*2.7), int(FONT_SIZE*1.5)))
+    height, width, _ = frame.shape
+
+    im = PIL.Image.new('RGB', (int(FONT_SIZE*2.7*(height/1440)),
+                               int(FONT_SIZE*1.5*(height/1440))))
     draw = ImageDraw.Draw(im)
     red_channel = min(int((speed / MAX_SPEED) * 255), 255)
     draw.text((2, 0), "{}\nkm/h".format(int(speed)),
               (red_channel, 255 - red_channel, 0),
               font=FONT)
 
-    height, width, _ = frame.shape
-
-    overlay_image(frame, im, int(height*(31/40)), int(width*(16/20)))
+    overlay_image(frame, im, int(height*(31/40)), int(width*(15/20)))
 
 
-def add_throttle_bar(frame, throttle):
+def prepare_throttle_bar(frame):
     frame_height, frame_width, _ = frame.shape
 
-    bar_height = int(frame_height*9/10)
-    bar_width = int(frame_width/20)
-
-    bar_y_position = int(frame_height*1/20)
-    bar_x_position = int(frame_width*1/30)
-
-    bar_center = int(bar_height*2/3)
+    bar_height = int(frame_height*THROTTLE_BAR_HEIGHT)
+    bar_width = int(frame_width*THROTTLE_BAR_WIDTH)
+    bar_center = int(bar_height*THROTTLE_BAR_CENTER)
 
     shape_im = PIL.Image.new('RGB', (bar_width, bar_height))
     draw = ImageDraw.Draw(shape_im)
@@ -127,74 +140,77 @@ def add_throttle_bar(frame, throttle):
     bar[bar_center:bar_height, :, 1] = (1 - bottom_gradient)*255
     bar[bar_center:bar_height, :, 2] = 0
 
+    bar *= mask
+
+    return bar
+
+
+def add_throttle_bar(frame, throttle, bar):
+    frame_height, frame_width, _ = frame.shape
+
+    bar_height, bar_width, _ = bar.shape
+
+    bar_center = int(bar_height*THROTTLE_BAR_CENTER)
+
+    bar_y_position = int(frame_height*1/20)
+    bar_x_position = int(frame_width*1/30)
+
     throttle_bar_mask = get_throttle_bar_mask(throttle, bar.shape, bar_center, bar_height)
 
-    bar *= mask
     bar *= throttle_bar_mask
 
     overlay_image(frame, bar, bar_y_position, bar_x_position)
 
 
-def add_steering_bar(frame, steering):
+def prepare_steering_bar(frame):
     frame_height, frame_width, _ = frame.shape
 
-    bar_width = int(frame_width*9/10)
-    bar_height = int(frame_height/20)
-
-    bar_x_position = int(frame_width*1/20)
-    bar_y_position = int(frame_height*221/240)
+    bar_width = int(frame_width*STEERING_BAR_WIDTH)*2
+    bar_height = int(frame_height*STEERING_BAR_HEIGHT)
+    bar_center = bar_width//2
 
     bar = np.zeros((bar_height, bar_width, 3), dtype='uint8')
 
+    left_gradient = np.tile(np.linspace(1, 0, bar_center), (bar_height, 1))
+    right_gradient = np.tile(np.linspace(0, 1, bar_center), (bar_height, 1))
+
+    bar[:, :bar_center, 0] = left_gradient*255
+    bar[:, :bar_center, 1] = 0
+    bar[:, :bar_center, 2] = (1 - left_gradient)*255
+
+    bar[:, bar_center:, 0] = right_gradient*255
+    bar[:, bar_center:, 1] = 0
+    bar[:, bar_center:, 2] = (1 - right_gradient)*255
+
+    shape_im = PIL.Image.new('RGB', (bar_width, bar_height))
+    draw = ImageDraw.Draw(shape_im)
+
+    return bar
+
+
+def add_steering_bar(frame, steering, bar):
+    frame_height, frame_width, _ = frame.shape
+
+    bar_height, bar_width, _ = bar.shape
     bar_center = bar_width//2
-    bar[:, :, 0] = 255
+
+    bar_x_position = frame_width//2 - bar_width//2
+    bar_y_position = int(frame_height*221/240)
+
     mask = get_steering_bar_mask(steering, bar.shape, bar_center)
     bar *= mask
-    plt.figure(2)
-    plt.subplot(2, 1, 1)
-    plt.imshow(mask*255)
-    plt.subplot(2, 1, 2)
-    plt.imshow(bar)
-    plt.show()
-
-    #shape_im = PIL.Image.new('RGB', (bar_width, bar_height))
-    #draw = ImageDraw.Draw(shape_im)
-
-    #top_gradient = np.tile(np.linspace(1, 0, bar_center), (bar_width, 1)).T
-    #bottom_gradient = np.tile(np.linspace(0, 1, bar_height - bar_center), (bar_width, 1)).T
-
-    #draw.polygon([
-    #    (0, 0),
-    #    (bar_width, 0),
-    #    (bar_width/2, bar_center),
-    #    (bar_width, bar_height),
-    #    (0, bar_height)
-    #], fill=(1, 1, 1))
-    #mask = PIL_to_npimage(shape_im)
-
-
-    #bar[0:bar_center, :, 0] = top_gradient*255
-    #bar[0:bar_center, :, 1] = (1 - top_gradient)*255
-    #bar[0:bar_center, :, 2] = 0
-
-    #bar[bar_center:bar_height, :, 0] = bottom_gradient*255
-    #bar[bar_center:bar_height, :, 1] = (1 - bottom_gradient)*255
-    #bar[bar_center:bar_height, :, 2] = 0
-
-    #throttle_bar_mask = get_throttle_bar_mask(steering, bar.shape, bar_center, bar_height)
-
-    #bar *= mask
-    #bar *= throttle_bar_mask
 
     overlay_image(frame, bar, bar_y_position, bar_x_position)
 
 
 def get_steering_bar_mask(steering, shape, bar_center):
     mask = np.zeros(shape, dtype='uint8')
-    if steering > 0:
-        mask[:, bar_center:bar_center + int(bar_center*steering), :] = 1
+    height = shape[0]
+    mask[int(height*5/6):, :, :] = 1
+    if steering < 0:
+        mask[:, bar_center:bar_center + int(bar_center*-steering), :] = 1
     else:
-        mask[:, bar_center - int(bar_center*-steering):bar_center, :] = 1
+        mask[:, bar_center - int(bar_center*steering):bar_center, :] = 1
     return mask
 
 
@@ -224,16 +240,16 @@ def overlay_image(frame, image, y, x):
     np_image = PIL_to_npimage(image)
     height, width, _ = np_image.shape
     mask = np.sum(np_image, axis=-1)
-    new_shit = np.empty(np_image.shape)
-    new_shit[:, :, 0] = mask
-    new_shit[:, :, 1] = mask
-    new_shit[:, :, 2] = mask
-    maximum = np.max(new_shit)
+    new_img = np.empty(np_image.shape)
+    new_img[:, :, 0] = mask
+    new_img[:, :, 1] = mask
+    new_img[:, :, 2] = mask
+    maximum = np.max(new_img)
     if maximum == 0:
         return
-    new_shit /= maximum
+    new_img /= maximum
     patch = frame[y:y+height, x:x+width, :]
-    patch[:, :, :] = (1 - new_shit)*patch + new_shit*np_image
+    patch[:, :, :] = (1 - new_img)*patch + new_img*np_image
 
 
 def rpm_to_speed(rpm, ten_count_distance):
@@ -302,7 +318,6 @@ def get_mp4_creation_date(mediafile):
                              "%Y-%m-%d %H:%M:%S")
 
 
-
 def main():
     parser = argparse.ArgumentParser(description='Create video with telemetry overlay.')
     parser.add_argument('-m', '--media', required=True, type=str,
@@ -312,16 +327,25 @@ def main():
     parser.add_argument('-t', '--ten-count-distance', type=float,
                         help='Number of meters the vehicle travels every 10 revolutions',
                         default=0.187)
-    
+    parser.add_argument('-o', '--output', help='The output file to create',
+                        default='output.mp4')
+    parser.add_argument('-r', '--downsample', type=int, help='Factor to downsample',
+                        default=1)
+    parser.add_argument('-s', '--offset', type=float, help='Number of seconds to advance the telemetry data', default=0.0)
+
     args = parser.parse_args()
 
     video_date = get_mp4_creation_date(args.media)
 
     init_sensor_data(args.data, video_date, args.ten_count_distance)
+    SENSOR_DATA.time_offset = args.offset
 
-    videoclip = edit.VideoFileClip(args.media)
+    width, height = edit.VideoFileClip(args.media).size
+    videoclip = edit.VideoFileClip(args.media, target_resolution=(height//args.downsample,
+                                                                  width//args.downsample))
+
     videoclip = videoclip.fl(add_telemetry_data)
-    videoclip.write_videofile('output.mp4', threads=4)
+    videoclip.write_videofile(args.output, threads=6)
 
 
 if __name__ == '__main__':
