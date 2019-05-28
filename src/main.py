@@ -69,18 +69,22 @@ def add_telemetry_data(get_frame, t):
         THROTTLE_BAR = prepare_throttle_bar(frame)
         STEERING_BAR = prepare_steering_bar(frame)
 
-    add_speed_text(frame, SENSOR_DATA.speed(t + offset))
-    add_throttle_bar(frame, SENSOR_DATA.throttle(t + offset), np.copy(THROTTLE_BAR))
-    #add_steering_bar(frame, SENSOR_DATA.steering(t + offset), np.copy(STEERING_BAR))
-    add_steering_bar(frame, -1.0, np.copy(STEERING_BAR))
+    add_speed_text(frame, SENSOR_DATA.speed(t))
+    add_throttle_bar(frame, SENSOR_DATA.throttle(t), np.copy(THROTTLE_BAR))
+    add_steering_bar(frame, SENSOR_DATA.steering(t), np.copy(STEERING_BAR))
+    #add_steering_bar(frame, -1.0, np.copy(STEERING_BAR))
     #add_throttle_bar(frame, 1.0)
 
     overlay_image(frame, TEXT_FRAME, 0, 0)
-    plt.figure(1)
-    plt.imshow(frame)
-    plt.show()
-    sys.exit(0)
     return frame
+
+
+def red_green_gradient(space):
+    inv = 1. - space
+    red = (inv < 0.5)*1. + (inv >= 0.5)*(1. - inv)*2
+    green = (inv >= 0.5)*1. + (inv < 0.5)*(inv)*2
+    return red, green
+
 
 
 def get_static_text(shape):
@@ -132,12 +136,15 @@ def prepare_throttle_bar(frame):
 
     bar = np.empty((bar_height, bar_width, 3), dtype='uint8')
 
-    bar[0:bar_center, :, 0] = top_gradient*255
-    bar[0:bar_center, :, 1] = (1 - top_gradient)*255
+    top_red, top_green = red_green_gradient(top_gradient)
+    bottom_red, bottom_green = red_green_gradient(bottom_gradient)
+
+    bar[0:bar_center, :, 0] = top_red*255
+    bar[0:bar_center, :, 1] = top_green*255
     bar[0:bar_center, :, 2] = 0
 
-    bar[bar_center:bar_height, :, 0] = bottom_gradient*255
-    bar[bar_center:bar_height, :, 1] = (1 - bottom_gradient)*255
+    bar[bar_center:bar_height, :, 0] = bottom_red*255
+    bar[bar_center:bar_height, :, 1] = bottom_green*255
     bar[bar_center:bar_height, :, 2] = 0
 
     bar *= mask
@@ -277,25 +284,28 @@ def init_sensor_data(data_path, video_date, ten_count_distance):
 
     data = []
     first_date = None
+    files = []
     for root, csv_file in sorted(csv_files):
         date = datetime.strptime("20" + csv_file, "%Y%m%d%H%M%S.csv")
+        dist = abs(date - video_date)
         if is_same_day(date, video_date):
-            if first_date is None:
-                first_date = date
-            lines = None
-            with open(os.path.join(root, csv_file)) as f:
-                lines = f.readlines()
-                #data = [tuple(float(c) for c in x.split(',')) for x in f.readlines()[6:]]
+            files.append((root, csv_file, date, dist))
 
-            for line in lines[5:]:
-                line_split = line.split(',')
-                time = time_to_seconds(line_split[2])
-                steering = float(line_split[3])/100
-                throttle = float(line_split[4])/100
-                rpm = float(line_split[5])
-                speed = rpm_to_speed(int(rpm), ten_count_distance)
+    root, csv_file, date, _ = min(files, key=lambda x: x[3])
 
-                data.append((time, steering, throttle, speed))
+    lines = None
+    with open(os.path.join(root, csv_file)) as f:
+        lines = f.readlines()
+
+    for line in lines[5:]:
+        line_split = line.split(',')
+        time = time_to_seconds(line_split[2])
+        steering = float(line_split[3])/100
+        throttle = float(line_split[4])/100
+        rpm = float(line_split[5])
+        speed = rpm_to_speed(int(rpm), ten_count_distance)
+
+        data.append((time, steering, throttle, speed))
 
     data_array = np.array(data)
     SENSOR_DATA.speed = interpolate.interp1d(data_array[:, 0], data_array[:, 3],
@@ -304,8 +314,6 @@ def init_sensor_data(data_path, video_date, ten_count_distance):
                                                 fill_value=0, bounds_error=False)
     SENSOR_DATA.steering = interpolate.interp1d(data_array[:, 0], data_array[:, 1],
                                                 fill_value=0, bounds_error=False)
-    SENSOR_DATA.time_offset = video_date - first_date
-    #pdb.set_trace()
 
 
 def get_mp4_creation_date(mediafile):
@@ -320,8 +328,7 @@ def get_mp4_creation_date(mediafile):
 
 def main():
     parser = argparse.ArgumentParser(description='Create video with telemetry overlay.')
-    parser.add_argument('-m', '--media', required=True, type=str,
-                       help='Path to the video file')
+    parser.add_argument('media', type=str, help='Path to the video file')
     parser.add_argument('-d', '--data', required=True, type=str,
                        help='Path to the telemetry data')
     parser.add_argument('-t', '--ten-count-distance', type=float,
