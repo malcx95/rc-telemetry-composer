@@ -278,20 +278,23 @@ def is_same_day(date1, date2):
 
 
 def init_sensor_data(data_path, video_date, ten_count_distance):
-    csv_files = []
-    for root, _, files in os.walk(data_path):
-        csv_files.extend([(root, f) for f in files if f.endswith('.csv')])
-
     data = []
-    first_date = None
-    files = []
-    for root, csv_file in sorted(csv_files):
-        date = datetime.strptime("20" + csv_file, "%Y%m%d%H%M%S.csv")
-        dist = abs(date - video_date)
-        if is_same_day(date, video_date):
-            files.append((root, csv_file, date, dist))
+    if os.path.isdir(data_path):
+        csv_files = []
+        for root, _, files in os.walk(data_path):
+            csv_files.extend([(root, f) for f in files if f.endswith('.csv')])
 
-    root, csv_file, date, _ = min(files, key=lambda x: x[3])
+        first_date = None
+        files = []
+        for root, csv_file in sorted(csv_files):
+            date = datetime.strptime("20" + csv_file, "%Y%m%d%H%M%S.csv")
+            dist = abs(date - video_date)
+            if is_same_day(date, video_date):
+                files.append((root, csv_file, date, dist))
+
+        root, csv_file, date, _ = min(files, key=lambda x: x[3])
+    elif os.path.isfile(data_path):
+        root, csv_file = os.path.split(data_path)
 
     lines = None
     with open(os.path.join(root, csv_file)) as f:
@@ -328,7 +331,7 @@ def get_mp4_creation_date(mediafile):
 
 def main():
     parser = argparse.ArgumentParser(description='Create video with telemetry overlay.')
-    parser.add_argument('media', type=str, help='Path to the video file')
+    parser.add_argument('media', type=str, help='Path to the video file', nargs='+')
     parser.add_argument('-d', '--data', required=True, type=str,
                        help='Path to the telemetry data')
     parser.add_argument('-t', '--ten-count-distance', type=float,
@@ -342,14 +345,23 @@ def main():
 
     args = parser.parse_args()
 
-    video_date = get_mp4_creation_date(args.media)
+    if not os.path.isfile(args.data):
+        video_date = get_mp4_creation_date(args.media[0])
+    else:
+        video_date = None
 
     init_sensor_data(args.data, video_date, args.ten_count_distance)
     SENSOR_DATA.time_offset = args.offset
 
-    width, height = edit.VideoFileClip(args.media).size
-    videoclip = edit.VideoFileClip(args.media, target_resolution=(height//args.downsample,
-                                                                  width//args.downsample))
+    width, height = edit.VideoFileClip(args.media[0]).size
+    videos = []
+    for video_file in args.media:
+        videoclip = edit.VideoFileClip(video_file,
+                                       target_resolution=(height//args.downsample,
+                                                          width//args.downsample))
+        videos.append(videoclip)
+
+    videoclip = edit.concatenate_videoclips(videos)
 
     videoclip = videoclip.fl(add_telemetry_data)
     videoclip.write_videofile(args.output, threads=6)
