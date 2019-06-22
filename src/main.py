@@ -73,9 +73,12 @@ def add_telemetry_data(get_frame, t):
     add_throttle_bar(frame, SENSOR_DATA.throttle(t), np.copy(THROTTLE_BAR))
     add_steering_bar(frame, SENSOR_DATA.steering(t), np.copy(STEERING_BAR))
     #add_steering_bar(frame, -1.0, np.copy(STEERING_BAR))
-    #add_throttle_bar(frame, 1.0)
 
     overlay_image(frame, TEXT_FRAME, 0, 0)
+    #plt.figure(1)
+    #plt.imshow(frame)
+    #plt.show()
+    #sys.exit(0)
     return frame
 
 
@@ -84,7 +87,6 @@ def red_green_gradient(space):
     red = (inv < 0.5)*1. + (inv >= 0.5)*(1. - inv)*2
     green = (inv >= 0.5)*1. + (inv < 0.5)*(inv)*2
     return red, green
-
 
 
 def get_static_text(shape):
@@ -104,9 +106,9 @@ def add_speed_text(frame, speed):
     im = PIL.Image.new('RGB', (int(FONT_SIZE*2.7*(height/1440)),
                                int(FONT_SIZE*1.5*(height/1440))))
     draw = ImageDraw.Draw(im)
-    red_channel = min(int((speed / MAX_SPEED) * 255), 255)
+    red, green = red_green_gradient(speed / MAX_SPEED)
     draw.text((2, 0), "{}\nkm/h".format(int(speed)),
-              (red_channel, 255 - red_channel, 0),
+              (int(red*255), int(green*255), 0),
               font=FONT)
 
     overlay_image(frame, im, int(height*(31/40)), int(width*(15/20)))
@@ -189,8 +191,8 @@ def prepare_steering_bar(frame):
     bar[:, bar_center:, 1] = 0
     bar[:, bar_center:, 2] = (1 - right_gradient)*255
 
-    shape_im = PIL.Image.new('RGB', (bar_width, bar_height))
-    draw = ImageDraw.Draw(shape_im)
+    # shape_im = PIL.Image.new('RGB', (bar_width, bar_height))
+    # draw = ImageDraw.Draw(shape_im)
 
     return bar
 
